@@ -68,7 +68,6 @@ static int event_insert(Heap *h, note_player_event_t *npe)
 /* note event can be freed after calling this, all info needed is copied */
 void note_player_process_note(note_player_t *np, const note_event_t *ne)
 {
-    np->note_on_from_event(ne,np->data);
     note_player_event_t *npe = _M(note_player_event_t,1);
     *npe = (note_player_event_t) {
         ._time = np->curtime + ne->len,
@@ -77,7 +76,11 @@ void note_player_process_note(note_player_t *np, const note_event_t *ne)
     };
     if (event_insert(np->_h,npe)) {
         _F(npe); /* error inserting, free */
+        return;
     }
+    /* only play if we successfully inserted the note off, avoiding stuck notes
+     * */
+    np->note_on_from_event(ne,np->data);
 }
 
 void note_player_inc_time(note_player_t *np, size_t dtime)
