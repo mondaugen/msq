@@ -2,6 +2,7 @@
 #define HEAP_H 
 
 #include <stddef.h> 
+#include <stdlib.h> 
 
 /*
 Allocate a minheap on the stack

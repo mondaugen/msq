@@ -1,3 +1,11 @@
+#include "defs.h" 
+#include "seq.h"
+
+struct seq_t {
+    Heap *_h;
+    seq_event_t *events;
+} seq_t;
+
 /* make min heap where equal elements allowed */
 static int seq_event_cmp (void *a, void *b)
 {
