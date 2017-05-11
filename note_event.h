@@ -1,6 +1,8 @@
 #ifndef NOTE_EVENT_H
 #define NOTE_EVENT_H 
 
+#include <stddef.h> 
+#include "types.h" 
 #include "seq.h" 
 
 typedef struct note_event_t {

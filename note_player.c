@@ -3,6 +3,8 @@
 #include "heap.h"
 #include "defs.h"
 
+/* TODO add function compatible with what note_event_f_t expects */
+
 struct note_player_event_t {
     size_t _curidx;
     size_t _time;

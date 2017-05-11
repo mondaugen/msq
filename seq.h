@@ -13,7 +13,7 @@ typedef struct seq_event_t {
     void (*cb)(seq_t*,struct seq_event_t*,size_t);
     void *data;
     void (*free)(struct seq_event_t*);
-    const char (*as_str)(struct seq_event_t*);
+    const char *(*as_str)(const struct seq_event_t*);
 } seq_event_t;
 
 typedef struct seq_end_t {
