@@ -10,4 +10,7 @@
 #define _MZ(x,t,s) memset(x,0,sizeof(t)*s) 
 #define _F(x) free(x) 
 
+/* forward define structure */
+#define FDS(t) struct t; typedef struct t t 
+
 #endif /* DEFS_H */

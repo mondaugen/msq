@@ -127,3 +127,11 @@ HeapErr Heap_push(Heap *H, void *key)
     float_up_last(H);
     return HEAP_ENONE;
 }
+
+/* Clear out all items from the heap, without popping them. References of
+ * course should be held elsewhere to dynamically allocated items so they can
+ * be freed. */
+void Heap_clear(Heap *h)
+{
+    memset(h->A,0,sizeof(void*)*h->maxsize);
+}

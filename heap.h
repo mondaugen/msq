@@ -40,6 +40,7 @@ void Heap_heapify(Heap *H, size_t i);
 HeapErr Heap_make_heap(Heap *H, void **A, size_t size);
 HeapErr Heap_pop(Heap *H, void **key);
 HeapErr Heap_push(Heap *H, void *key);
+void Heap_clear(Heap *h);
 static inline void Heap_free(Heap *h) { free(h); }
 
 #endif /* HEAP_H */

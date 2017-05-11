@@ -1,13 +1,13 @@
 #ifndef NOTE_PLAYER_H
 #define NOTE_PLAYER_H 
 #include <stddef.h> 
+#include "defs.h" 
 #include "types.h" 
 #include "note_event.h" 
 
-struct note_player_event_t;
-typedef struct note_player_event_t note_player_event_t;
-struct note_player_t;
-typedef struct note_player_t note_player_t;
+FDS(note_player_event_t);
+FDS(note_player_t);
+
 void note_player_event_get_pitch_vel(note_player_event_t *npe,
                                      f32_t *pitch,
                                      f32_t *vel);

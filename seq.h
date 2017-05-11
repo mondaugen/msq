@@ -2,10 +2,10 @@
 #define SEQ_H 
 
 #include <stdlib.h> 
+#include "defs.h" 
 #include "err.h" 
 
-struct seq_t;
-typedef struct seq_t seq_t;
+FDS(seq_t);
 
 typedef struct seq_event_t {
     struct seq_event_t *next;
@@ -18,7 +18,6 @@ typedef struct seq_event_t {
 
 typedef struct seq_end_t {
     seq_event_t super;
-    size_t len;
 } seq_end_t;
 
 seq_t *seq_new (size_t maxsize);
