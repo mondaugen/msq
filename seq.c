@@ -98,7 +98,7 @@ static const char *seq_event_as_str (const seq_event_t *se)
     return "default";
 }
 
-static void seq_event_free(seq_event_t *se) { free((void*)se); }
+static void seq_event_free (seq_event_t *se) { free((void*)se); }
 
 void seq_event_init_default (seq_event_t *s, size_t time)
 {
