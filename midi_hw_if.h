@@ -75,7 +75,12 @@ typedef enum {
 typedef struct midi_hw_if_t midi_hw_if_t;
 
 midi_hw_if_t *
-midi_hw_if_new(size_t maxevents, midi_hw_if_flag_t flags);
+midi_hw_if_new(size_t            maxevents,
+               midi_hw_if_flag_t flags,
+               int (*mutex_lock)(void *mutex),
+               int (*mutex_trylock)(void *mutex),
+               int (*mutex_unlock)(void *mutex),
+               void *mutex)
 void
 midi_hw_if_free(midi_hw_if_t *mhi);
 void

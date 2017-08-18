@@ -14,12 +14,22 @@ struct midi_ev_seq_t {
 struct midi_hw_if_t {
     midi_hw_if_ev_filter_t evfilter;
     midi_ev_seq_t *        midi_ev_seq;
+    int (*mutex_lock)(void *mutex);
+    int (*mutex_trylock)(void *mutex);
+    int (*_mutex_unlock)(void *mutex);
+    void *mutex;
 };
+
+static midi_hw_if_ev_t *
+midi_hw_if_ev_new(void)
+{
+    return _M(midi_hw_if_ev_t,1);
+}
 
 static void
 midi_hw_if_ev_free(midi_hw_if_ev_t *se)
 {
-    free((void *)se);
+    _F((void *)se);
 }
 
 /* make min heap where equal elements allowed */
@@ -76,8 +86,10 @@ midi_ev_seq_add_event(midi_ev_seq_t *s, midi_hw_if_ev_t *se)
 }
 
 void
-midi_ev_seq_play_up_to_time(midi_ev_seq_t *midi_ev_seq, size_t time,
-                            void (*fun)(midi_hw_if_ev_t *, void *), void *aux)
+midi_ev_seq_play_up_to_time(midi_ev_seq_t *midi_ev_seq,
+                            size_t         time,
+                            void (*fun)(midi_hw_if_ev_t *, void *),
+                            void *aux)
 {
     midi_hw_if_ev_t *se;
     for (se = (midi_hw_if_ev_t *)midi_ev_seq->_h->A[0];
@@ -98,8 +110,17 @@ _midi_ev_seq_free_all_fun(midi_hw_if_ev_t *ev, void *aux)
 void
 midi_ev_seq_free_all_events(midi_ev_seq_t *midi_ev_seq)
 {
-    midi_ev_seq_play_up_to_time(midi_ev_seq, MIDI_HW_IF_TS_MAX,
-                                _midi_ev_seq_free_all_fun, NULL);
+    midi_ev_seq_play_up_to_time(
+      midi_ev_seq, MIDI_HW_IF_TS_MAX, _midi_ev_seq_free_all_fun, NULL);
+}
+
+void
+midi_hw_if_ev_filter_init(midi_hw_if_ev_filter_t *ef,
+        midi_hw_if_flag_t flags) {
+    // TODO: When possibilities for flags grow, need to mask flags not pertinent to the
+    // ev_filter
+    memset(ef,0,sizeof(midi_hw_if_ev_filter_t));
+    ef->flags |= flags;
 }
 
 int
@@ -151,21 +172,60 @@ _send_evs(midi_hw_if_ev_t *ev, void *aux)
 
 /* Events are passed to fun, which should send them to the hardware.  The
    pointer to the event is no longer valid after the call to fun, so if info
-   should stick around, the events must be copied by fun.
-    Events having time stamps up to time are passed to fun. */
-void
-midi_hw_if_send_evs(midi_hw_if_t *mhi, midi_hw_if_ts_t time,
-                    void (*fun)(midi_hw_if_ev_t *, void *), void *aux)
+   should stick around, the events must be copied by fun.  Events having time
+   stamps up to time are passed to fun.  Returns err_BUSY if mutex locked, in
+   that case, the caller should wait and call again with the time waited added
+   to time. */
+err_t
+midi_hw_if_send_evs(midi_hw_if_t *  mhi,
+                    midi_hw_if_ts_t time,
+                    void (*fun)(midi_hw_if_ev_t *, void *),
+                    void *aux)
 {
     _send_evs_t info = {.evfilt = &mhi->evfilt, .fun = fun, .aux = aux };
-    midi_ev_seq_play_up_to_time(mhi->midi_ev_seq, time, _send_evs,
-                                (void *)&info);
+    if (mhi->mutex_trylock(mhi->mutex)) {
+        return err_BUSY;
+    }
+    midi_ev_seq_play_up_to_time(
+      mhi->midi_ev_seq, time, _send_evs, (void *)&info);
+    if (mhi->mutex_freelock(mhi->mutex)) {
+        return err_EINVAL;
+    }
+    return err_NONE;
 }
 
-/* TODO: Add receive function */
+/* fun will be passed a pointer to an event, which it can fill in. This event
+   will get scheduled.  Returns non-zero on error, zero otherwise. aux is data
+   that will be passed to the function in addition to the event. */
+err_t
+midi_hw_if_sched_ev(midi_hw_if_t *mhi,
+                    void (*fun)(midi_hw_if_ev_t *, void *),
+                    void *aux)
+{
+   /* Wait until mutex available */ 
+    if (mhi->mutex_lock(mhi->mutex)) {
+        return err_EINVAL;
+    }
+    midi_hw_if_ev_t *ev = midi_hw_if_ev_new();
+    fun(ev,aux);
+    err_t
+    err = midi_ev_seq_add_event(mhi->midi_ev_seq, ev);
+    if (mhi->mutex_freelock(mhi->mutex)) {
+        return err_EINVAL;
+    }
+    if (err) {
+        return err;
+    }
+    return err_NONE;
+}
 
 midi_hw_if_t *
-midi_hw_if_new(size_t maxevents, midi_hw_if_flag_t flags)
+midi_hw_if_new(size_t            maxevents,
+               midi_hw_if_flag_t flags,
+               int (*mutex_lock)(void *mutex),
+               int (*mutex_trylock)(void *mutex),
+               int (*mutex_unlock)(void *mutex),
+               void *mutex)
 {
     midi_hw_if_t * ret = _C(1, sizeof(midi_hw_if_t));
     midi_ev_seq_t *msq = midi_ev_seq_new(maxevents);
@@ -174,6 +234,11 @@ midi_hw_if_new(size_t maxevents, midi_hw_if_flag_t flags)
         return NULL;
     }
     ret->midi_ev_seq = msq;
+    midi_hw_if_ev_filter_init(&ret->evfilter, flags);
+    mh->mutex_lock = mutex_lock;
+    mh->mutex_trylock = mutex_trylock;
+    mh->_mutex_unlock = mutex_unlock;
+    mh->mutex = mutex;
 }
 
 void

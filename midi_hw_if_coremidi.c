@@ -13,12 +13,12 @@ static char strbuf[STR_BUF_LEN];
 #define MIDI_HW_IF_COREMIDI_USLEEP_TIME 1000 // check every millisecond
 
 struct {
-    midi_hw_if_t *midi_hw_if;
+    midi_hw_if_t   *midi_hw_if;
     /* The thread on which MIDI events are sent to hardware */
-    pthread_t out_thread;
-    /* The mutex for this thread so we can either be adding output events,
-       or sending them */
-    pthread_mutex_t out_mutex;
+    pthread_t       out_thread;
+    /* The mutex for this thread so we can either be adding output events, or
+       sending them */
+    pthread_mutex_t mutex;
     /* The current scheduler time */
     midi_hw_if_ts_t cur_time;
     /* The amount of time to look ahead when scheduling */
@@ -61,14 +61,13 @@ static void
 _send_fun(midi_hw_if_ev_t *ev, void *aux)
 {
     midi_hw_if_coremidi_t *mh = (midi_hw_if_coremidi_t *)aux;
-    MIDIPacketList         pktlist = {
+    MIDIPacketList pktlist = {
         .numPackets = 1,
         .packet =
           (MIDIPacket){
             .timeStamp = midi_hw_if_ts_to_HostTime(ev->ts),
             .length = midi_hw_if_ev_data_len(ev),
           }
-
     };
     midi_hw_if_ev_fill_data(ev, pktlist.packet.data);
     OSSatus oss;
@@ -85,12 +84,11 @@ _out_thread(void *arg)
         while (midi_hw_if_coremidi_cur_time() < mh->cur_time) {
             usleep(MIDI_HW_IF_COREMIDI_USLEEP_TIME);
         }
-        if ((pthread_mutex_trylock(&mh->out_mutex) == 0)) {
-            midi_hw_if_send_evs(mh->midi_hw_if,
-                                mh->cur_time + mh->lookahead_time,
-                                _send_fun,
-                                (void *)mh);
-        }
+        /* Try sending, if mutex locked, events will get sent next time. */
+        (void)midi_hw_if_send_evs(mh->midi_hw_if,
+                mh->cur_time + mh->lookahead_time,
+                _send_fun,
+                (void *)mh);
         mh->cur_time = midi_hw_if_coremidi_cur_time() + mh->sched_period;
     }
     return arg;
@@ -101,7 +99,7 @@ midi_hw_if_coremidi_free(midi_hw_if_coremidi_t *mh)
 {
     if (mh) {
         (void)midi_hw_if_coremidi_stop(mh);
-        pthread_mutex_destroy(&mh->out_mutex);
+        pthread_mutex_destroy(&mh->mutex);
         if (mh->midi_hw_if) {
             midi_hw_if_free(mh->midi_hw_if);
         }
@@ -118,6 +116,24 @@ midi_hw_if_coremidi_free(midi_hw_if_coremidi_t *mh)
     }
 }
 
+static inline int
+_mutex_lock(void *mutex)
+{
+    return pthread_mutex_lock((pthread_mutex_t*)mutex);
+}
+
+static inline int
+_mutex_trylock(void *mutex)
+{
+    return pthread_mutex_trylock((pthread_mutex_t*)mutex);
+}
+
+static inline int
+_mutex_unlock(void *mutex)
+{
+    return pthread_mutex_unlock((pthread_mutex_t*)mutex);
+}
+
 midi_hw_if_coremidi_t *
 midi_hw_if_coremidi_new(size_t            maxevents,
                         midi_hw_if_flag_t flags,
@@ -132,7 +148,10 @@ midi_hw_if_coremidi_new(size_t            maxevents,
         if (!ret) {
             break;
         }
-        ret->midi_hw_if = midi_hw_if_new(maxevents, flags);
+        ret->mutex = PTHREAD_MUTEX_INITIALIZER;
+        ret->midi_hw_if = midi_hw_if_new(maxevents, 
+                flags, _mutex_lock, _mutex_trylock, _mutex_unlock, 
+                (void*)&ret->mutex);
         if (!ret->midi_hw_if) {
             break;
         }
@@ -146,7 +165,6 @@ midi_hw_if_coremidi_new(size_t            maxevents,
             _PE("error %d creating output port", oss);
             break;
         }
-        ret->out_mutex = PTHREAD_MUTEX_INITIALIZER;
         ret->lookahead_time = lookahead_time;
         ret->sched_period = sched_period;
         return ret;
@@ -195,8 +213,7 @@ midi_hw_if_coremidi_stop(midi_hw_if_coremidi_t *mh)
     }
     mh->running = 0;
     /* wait for thread to finish */
-    while (!pthread_join(mh->out_thread))
-        ;
+    while (!pthread_join(mh->out_thread));
     return err_NONE;
 }
 
