@@ -13,4 +13,7 @@
 /* forward define structure */
 #define FDS(t) struct t; typedef struct t t 
 
+/* print errors */
+#define _PE(format,...) fprintf(stderr,"%s:%d " format "\n", __func__, __LINE__, __VA_ARGS__)
+
 #endif /* DEFS_H */
