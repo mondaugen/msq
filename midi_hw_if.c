@@ -16,14 +16,15 @@ struct midi_hw_if_t {
     midi_ev_seq_t *        midi_ev_seq;
     int (*mutex_lock)(void *mutex);
     int (*mutex_trylock)(void *mutex);
-    int (*_mutex_unlock)(void *mutex);
+    int (*mutex_unlock)(void *mutex);
     void *mutex;
+    midi_hw_if_ts_t (*get_cur_time)(struct midi_hw_if_t *);
 };
 
 static midi_hw_if_ev_t *
 midi_hw_if_ev_new(void)
 {
-    return _M(midi_hw_if_ev_t,1);
+    return _M(midi_hw_if_ev_t, 1);
 }
 
 static void
@@ -115,11 +116,11 @@ midi_ev_seq_free_all_events(midi_ev_seq_t *midi_ev_seq)
 }
 
 void
-midi_hw_if_ev_filter_init(midi_hw_if_ev_filter_t *ef,
-        midi_hw_if_flag_t flags) {
-    // TODO: When possibilities for flags grow, need to mask flags not pertinent to the
-    // ev_filter
-    memset(ef,0,sizeof(midi_hw_if_ev_filter_t));
+midi_hw_if_ev_filter_init(midi_hw_if_ev_filter_t *ef, midi_hw_if_flag_t flags)
+{
+    // TODO: When possibilities for flags grow, need to mask flags not pertinent
+    // to the ev_filter
+    memset(ef, 0, sizeof(midi_hw_if_ev_filter_t));
     ef->flags |= flags;
 }
 
@@ -188,7 +189,7 @@ midi_hw_if_send_evs(midi_hw_if_t *  mhi,
     }
     midi_ev_seq_play_up_to_time(
       mhi->midi_ev_seq, time, _send_evs, (void *)&info);
-    if (mhi->mutex_freelock(mhi->mutex)) {
+    if (mhi->mutex_unlock(mhi->mutex)) {
         return err_EINVAL;
     }
     return err_NONE;
@@ -202,15 +203,14 @@ midi_hw_if_sched_ev(midi_hw_if_t *mhi,
                     void (*fun)(midi_hw_if_ev_t *, void *),
                     void *aux)
 {
-   /* Wait until mutex available */ 
+    /* Wait until mutex available */
     if (mhi->mutex_lock(mhi->mutex)) {
         return err_EINVAL;
     }
     midi_hw_if_ev_t *ev = midi_hw_if_ev_new();
-    fun(ev,aux);
-    err_t
-    err = midi_ev_seq_add_event(mhi->midi_ev_seq, ev);
-    if (mhi->mutex_freelock(mhi->mutex)) {
+    fun(ev, aux);
+    err_t err = midi_ev_seq_add_event(mhi->midi_ev_seq, ev);
+    if (mhi->mutex_unlock(mhi->mutex)) {
         return err_EINVAL;
     }
     if (err) {
@@ -219,13 +219,14 @@ midi_hw_if_sched_ev(midi_hw_if_t *mhi,
     return err_NONE;
 }
 
+midi_hw_if_ts_t
+midi_hw_if_get_cur_time(midi_hw_if_t *mh)
+{
+    return mh->get_cur_time(mh);
+}
+
 midi_hw_if_t *
-midi_hw_if_new(size_t            maxevents,
-               midi_hw_if_flag_t flags,
-               int (*mutex_lock)(void *mutex),
-               int (*mutex_trylock)(void *mutex),
-               int (*mutex_unlock)(void *mutex),
-               void *mutex)
+midi_hw_if_new(midi_hw_if_new_t *mhn)
 {
     midi_hw_if_t * ret = _C(1, sizeof(midi_hw_if_t));
     midi_ev_seq_t *msq = midi_ev_seq_new(maxevents);
@@ -235,10 +236,11 @@ midi_hw_if_new(size_t            maxevents,
     }
     ret->midi_ev_seq = msq;
     midi_hw_if_ev_filter_init(&ret->evfilter, flags);
-    mh->mutex_lock = mutex_lock;
-    mh->mutex_trylock = mutex_trylock;
-    mh->_mutex_unlock = mutex_unlock;
-    mh->mutex = mutex;
+    mh->mutex_lock = mhn->mutex_lock;
+    mh->mutex_trylock = mhn->mutex_trylock;
+    mh->mutex_unlock = mhn->mutex_unlock;
+    mh->mutex = mhn->mutex;
+    mh->get_cur_time = mhn->get_cur_time;
 }
 
 void
