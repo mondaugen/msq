@@ -6,7 +6,8 @@ typedef enum err_t {
     err_EINVAL,
     err_MEM,
     err_FULL,
-    err_NFND
+    err_NFND,
+    err_BUSY
 } err_t;
 
 #endif /* ERR_H */

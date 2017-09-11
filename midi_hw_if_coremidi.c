@@ -1,9 +1,13 @@
 /* A MIDI hardware interface for CoreMIDI */
 
 #include "midi_hw_if.h"
+#include "midi_hw_if_coremidi.h"
+#include <mach/mach_time.h>
+#include <CoreAudio/CoreAudio.h>
 #include <CoreMIDI/CoreMIDI.h>
 #include <CoreServices/CoreServices.h>
 #include <pthread.h>
+#include "defs.h"
 
 #define STR_BUF_LEN 256
 static char strbuf[STR_BUF_LEN];
@@ -12,7 +16,7 @@ static char strbuf[STR_BUF_LEN];
    the sched_period, dictate the responsiveness of the scheduler. */
 #define MIDI_HW_IF_COREMIDI_USLEEP_TIME 1000 // check every millisecond
 
-struct {
+struct midi_hw_if_coremidi_t {
     midi_hw_if_t *midi_hw_if;
     /* The thread on which MIDI events are sent to hardware */
     pthread_t out_thread;
@@ -29,7 +33,7 @@ struct {
     MIDIClientRef   client;
     MIDIPortRef     out_port;
     MIDIEndpointRef out_dest;
-} midi_hw_if_coremidi_t;
+};
 
 /* Outputs the current time (midi_hw_if_t ignored) */
 static midi_hw_if_ts_t
@@ -42,11 +46,11 @@ _cur_time(midi_hw_if_t *mh)
     if (machtbinfo.denom == 0) {
         (void)mach_timebase_info(&machtbinfo);
     }
-    HostTime now = AudioGetCurrentHostTime();
+    UInt64 now = AudioGetCurrentHostTime();
     return (now / machtbinfo.denom) * machtbinfo.numer;
 }
 
-HostTime
+UInt64
 midi_hw_if_ts_to_HostTime(midi_hw_if_ts_t ts)
 {
     /* Depends what the timestamps mean */
@@ -66,8 +70,8 @@ _send_fun(midi_hw_if_ev_t *ev, void *aux)
                                 .timeStamp = midi_hw_if_ts_to_HostTime(ev->ts),
                                 .length = midi_hw_if_ev_data_len(ev),
                               } };
-    midi_hw_if_ev_fill_data(ev, pktlist.packet.data);
-    OSSatus oss;
+    midi_hw_if_ev_fill_data(ev, (char*)&pktlist.packet[0].data);
+    OSStatus oss;
     if ((oss = MIDISend(mh->out_port, mh->out_dest, &pktlist))) {
         _PE("error %d sending MIDI data", oss);
     }
@@ -145,7 +149,7 @@ midi_hw_if_coremidi_new(size_t            maxevents,
         if (!ret) {
             break;
         }
-        ret->mutex = PTHREAD_MUTEX_INITIALIZER;
+        ret->mutex = (pthread_mutex_t) PTHREAD_MUTEX_INITIALIZER;
         struct midi_hw_if_new_t mhin = {
             .maxevents = maxevents,
             .flags = flags,
@@ -160,13 +164,15 @@ midi_hw_if_coremidi_new(size_t            maxevents,
             break;
         }
         OSStatus oss;
+        CFStringRef clientname_cfsr = CFStringCreateWithCString(NULL, clientname, kCFStringEncodingUTF8);
+        CFStringRef outportname_cfsr = CFStringCreateWithCString(NULL, outportname, kCFStringEncodingUTF8);
         if ((oss =
-               MIDIClientCreate(CFSTR(clientname), NULL, NULL, &ret->client))) {
+               MIDIClientCreate(clientname_cfsr, NULL, NULL, &ret->client))) {
             _PE("error %d creating client %s", oss, clientname);
             break;
         }
-        if ((oss = MIDIOutputPortCreate(client, outportname, &ret->out_port))) {
-            _PE("error %d creating output port", oss);
+        if ((oss = MIDIOutputPortCreate(ret->client, outportname_cfsr, &ret->out_port))) {
+            _PE("error %d creating output port %s", oss, outportname);
             break;
         }
         ret->lookahead_time = lookahead_time;
@@ -199,7 +205,7 @@ err_t
 midi_hw_if_coremidi_start(midi_hw_if_coremidi_t *mh)
 {
     if (!mh->out_dest) {
-        _PE("no out_dest set");
+        _PE("%s","no out_dest set");
         return err_EINVAL;
     }
     mh->sched_time = _cur_time((midi_hw_if_t *)mh);
@@ -212,12 +218,12 @@ err_t
 midi_hw_if_coremidi_stop(midi_hw_if_coremidi_t *mh)
 {
     if (!mh->running) {
-        _PE("not running");
+        _PE("%s","not running");
         return err_EINVAL;
     }
     mh->running = 0;
     /* wait for thread to finish */
-    while (!pthread_join(mh->out_thread))
+    while (!pthread_join(mh->out_thread,NULL))
         ;
     return err_NONE;
 }

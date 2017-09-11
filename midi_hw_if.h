@@ -1,7 +1,9 @@
 #ifndef MIDI_HW_IF_H
 #define MIDI_HW_IF_H
 
+#include <stddef.h>
 #include <stdint.h>
+#include "err.h"
 
 #define MIDI_HW_IF_PITCH_MAX 128
 #define MIDI_HW_IF_CHAN_MAX 16
@@ -88,12 +90,16 @@ midi_hw_if_t *
 midi_hw_if_new(midi_hw_if_new_t *mhn);
 void
 midi_hw_if_free(midi_hw_if_t *mhi);
-void
+err_t
 midi_hw_if_send_evs(midi_hw_if_t *  mhi,
                     midi_hw_if_ts_t time,
                     void (*fun)(midi_hw_if_ev_t *, void *),
                     void *aux);
 midi_hw_if_ts_t
 midi_hw_if_get_cur_time(midi_hw_if_t *mh);
+err_t
+midi_hw_if_sched_ev(midi_hw_if_t *mhi,
+                    void (*fun)(midi_hw_if_ev_t *, void *),
+                    void *aux);
 
 #endif /* MIDI_HW_IF_H */

@@ -7,9 +7,9 @@ typedef struct {
     midi_hw_if_flag_t flags;
 } midi_hw_if_ev_filter_t;
 
-struct midi_ev_seq_t {
+typedef struct {
     Heap *_h;
-};
+} midi_ev_seq_t;
 
 struct midi_hw_if_t {
     midi_hw_if_ev_filter_t evfilter;
@@ -94,7 +94,7 @@ midi_ev_seq_play_up_to_time(midi_ev_seq_t *midi_ev_seq,
 {
     midi_hw_if_ev_t *se;
     for (se = (midi_hw_if_ev_t *)midi_ev_seq->_h->A[0];
-         (se != NULL) && (se->time <= time);
+         (se != NULL) && (se->ts <= time);
          (void)Heap_pop(midi_ev_seq->_h, (void **)&se)) {
         fun(se, aux);
     }
@@ -163,12 +163,12 @@ static void
 _send_evs(midi_hw_if_ev_t *ev, void *aux)
 {
     _send_evs_t *info = (_send_evs_t *)aux;
-    if (midi_hw_if_ev_filter_should_play(info->mhi->evfilt, ev)) {
+    if (midi_hw_if_ev_filter_should_play(info->evfilt, ev)) {
         info->fun(ev, info->aux);
     }
     /* event is freed. The caller had to make copies of the event if it wanted
        its info to stick around */
-    _F(se);
+    _F(ev);
 }
 
 /* Events are passed to fun, which should send them to the hardware.  The
@@ -183,7 +183,7 @@ midi_hw_if_send_evs(midi_hw_if_t *  mhi,
                     void (*fun)(midi_hw_if_ev_t *, void *),
                     void *aux)
 {
-    _send_evs_t info = {.evfilt = &mhi->evfilt, .fun = fun, .aux = aux };
+    _send_evs_t info = {.evfilt = &mhi->evfilter, .fun = fun, .aux = aux };
     if (mhi->mutex_trylock(mhi->mutex)) {
         return err_BUSY;
     }
@@ -228,19 +228,20 @@ midi_hw_if_get_cur_time(midi_hw_if_t *mh)
 midi_hw_if_t *
 midi_hw_if_new(midi_hw_if_new_t *mhn)
 {
-    midi_hw_if_t * ret = _C(1, sizeof(midi_hw_if_t));
-    midi_ev_seq_t *msq = midi_ev_seq_new(maxevents);
+    midi_hw_if_t *ret = _C(midi_hw_if_t,1);
+    midi_ev_seq_t *msq = midi_ev_seq_new(mhn->maxevents);
     if (!msq) {
         _F(ret);
         return NULL;
     }
     ret->midi_ev_seq = msq;
-    midi_hw_if_ev_filter_init(&ret->evfilter, flags);
-    mh->mutex_lock = mhn->mutex_lock;
-    mh->mutex_trylock = mhn->mutex_trylock;
-    mh->mutex_unlock = mhn->mutex_unlock;
-    mh->mutex = mhn->mutex;
-    mh->get_cur_time = mhn->get_cur_time;
+    midi_hw_if_ev_filter_init(&ret->evfilter, mhn->flags);
+    ret->mutex_lock = mhn->mutex_lock;
+    ret->mutex_trylock = mhn->mutex_trylock;
+    ret->mutex_unlock = mhn->mutex_unlock;
+    ret->mutex = mhn->mutex;
+    ret->get_cur_time = mhn->get_cur_time;
+    return ret;
 }
 
 void
