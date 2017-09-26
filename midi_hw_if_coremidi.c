@@ -66,14 +66,29 @@ _send_fun(midi_hw_if_ev_t *ev, void *aux)
 {
     midi_hw_if_coremidi_t *mh = (midi_hw_if_coremidi_t *)aux;
     MIDIPacketList         pktlist = {.numPackets = 1,
-                              .packet = (MIDIPacket){
+                              
+    };
+    pktlist.packet[0] = (MIDIPacket){
                                 .timeStamp = midi_hw_if_ts_to_HostTime(ev->ts),
                                 .length = midi_hw_if_ev_data_len(ev),
-                              } };
-    midi_hw_if_ev_fill_data(ev, (char*)&pktlist.packet[0].data);
+                              };
+    midi_hw_if_ev_fill_data(ev, (char*)pktlist.packet[0].data);
+    //if (((pktlist.packet[0].data[0] & 0xf)) == 0x8) { 
+    //    pktlist.packet[0].data[0] = (pktlist.packet[0].data[0] & 0xf0) | 0x9;
+    //}
     OSStatus oss;
     if ((oss = MIDISend(mh->out_port, mh->out_dest, &pktlist))) {
         _PE("error %d sending MIDI data", oss);
+    } else {
+#ifdef DEBUG
+        _PE("%s","sent MIDI data");
+        fprintf(stderr,"   ");
+        size_t n;
+        for (n = 0; n < pktlist.packet[0].length; n++) {
+            fprintf(stderr,"%02d ",pktlist.packet[0].data[n]);
+        }
+        fprintf(stderr,"\n");
+#endif 
     }
 }
 

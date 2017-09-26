@@ -59,8 +59,8 @@ note_off_fill(midi_hw_if_ev_t *ev, void *aux)
     ev->type = midi_hw_if_ev_type_NOTEOFF;
     ev->noteoff.chan = nd->chan;
     ev->noteoff.pitch = nd->pitch;
-    ev->noteoff.vel = nd->vel;
-    ev->ts = nd->start_time + nd->len;
+    ev->noteoff.vel = 0;
+    ev->ts = nd->start_time;
 }
 
 int
@@ -126,21 +126,24 @@ main (int argc, char **argv)
         if (!midi_hw_if_coremidi_set_out_dest(midi_hw_cm,outdestname)) {
             _PE("setting output destination to %s",outdestname);
         }
-        midi_hw_if_coremidi_start(midi_hw_cm);
         midi_hw_if = midi_hw_if_coremidi_get_hw_if(midi_hw_cm); 
         note_desc_t nd = {
             .vel = 100,
-            .start_time = midi_hw_if_get_cur_time(midi_hw_if),
+            .start_time = midi_hw_if_get_cur_time(midi_hw_if)+1e9*0.5,
             .len = 1e9*0.5,
-            .chan = 0
+            .chan = 1
         };
-        uint8_t pitches[] = {60,64,67};
+        uint8_t pitches[] = {60,64,67,60,64,67};
         size_t i;
+        /* We start the hardware before so that we can see what happens when
+          scheduling while it's running. */ 
+        midi_hw_if_coremidi_start(midi_hw_cm);
         for (i = 0; i < sizeof(pitches)/sizeof(uint8_t); i++) {
             nd.pitch = pitches[i];
             midi_hw_if_sched_ev(midi_hw_if,note_on_fill,(void*)&nd);
             nd.start_time += nd.len;
             midi_hw_if_sched_ev(midi_hw_if,note_off_fill,(void*)&nd);
+            nd.start_time -= nd.len*3/4;
         }
     }
     signal(SIGINT,setdone);

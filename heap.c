@@ -100,12 +100,13 @@ HeapErr Heap_pop(Heap *H, void **key)
     *key = H->A[0];
     H->set_idx(*key,H->maxsize);
     H->A[0] = H->A[H->size - 1];
+    H->A[H->size - 1] = NULL;
     H->size--;
     Heap_heapify(H, 0);
     return HEAP_ENONE;
 }
 
-static void float_up_last(Heap *H)
+static void _float_up_last(Heap *H)
 {
     size_t i = H->size - 1;
     while ((i > 0) && (H->cmp(H->A[PARENT(i)],H->A[i]))) {
@@ -124,7 +125,7 @@ HeapErr Heap_push(Heap *H, void *key)
     H->A[H->size] = key;
     H->set_idx(H->A[H->size],H->size);
     H->size++;
-    float_up_last(H);
+    _float_up_last(H);
     return HEAP_ENONE;
 }
 
@@ -134,4 +135,19 @@ HeapErr Heap_push(Heap *H, void *key)
 void Heap_clear(Heap *h)
 {
     memset(h->A,0,sizeof(void*)*h->maxsize);
+}
+
+/* Returns reference to top element. Element is not removed, use Heap_pop for
+   that. */
+HeapErr Heap_top(Heap *H, void **key)
+{
+    if (!key) {
+        return HEAP_EINVAL;
+    }
+    *key = NULL;
+    if (H->size > 0) {
+        *key = H->A[0];
+        return HEAP_ENONE;
+    }
+    return HEAP_ESIZE;
 }

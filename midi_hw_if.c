@@ -33,13 +33,13 @@ midi_hw_if_ev_free(midi_hw_if_ev_t *se)
     _F((void *)se);
 }
 
-/* make min heap where equal elements allowed */
+/* make min heap such that equal items are popped out in FIFO fashion*/
 static int
 midi_ev_seq_event_cmp(void *a, void *b)
 {
     midi_hw_if_ev_t *a_ = (midi_hw_if_ev_t *)a;
     midi_hw_if_ev_t *b_ = (midi_hw_if_ev_t *)b;
-    return a_->ts >= b_->ts;
+    return a_->ts > b_->ts;
 }
 
 /* Seq's heap doesn't need to know the index */
@@ -92,11 +92,19 @@ midi_ev_seq_play_up_to_time(midi_ev_seq_t *midi_ev_seq,
                             void (*fun)(midi_hw_if_ev_t *, void *),
                             void *aux)
 {
-    midi_hw_if_ev_t *se;
-    for (se = (midi_hw_if_ev_t *)midi_ev_seq->_h->A[0];
-         (se != NULL) && (se->ts <= time);
-         (void)Heap_pop(midi_ev_seq->_h, (void **)&se)) {
-        fun(se, aux);
+    midi_hw_if_ev_t *se = NULL;
+    HeapErr          err;
+    while ((err = Heap_top(midi_ev_seq->_h, (void **)&se)) == HEAP_ENONE) {
+        /* This is actually redundant to check... */
+        if (!se) {
+            return;
+        }
+        if (se->ts <= time) {
+            (void)Heap_pop(midi_ev_seq->_h, (void **)&se);
+            fun(se, aux);
+        } else {
+            return;
+        }
     }
 }
 
@@ -148,7 +156,10 @@ midi_hw_if_ev_filter_should_play(midi_hw_if_ev_filter_t *ef,
                 return 0;
             }
             ef->counts[ev->noteon.chan][ev->noteon.pitch] -= 1;
-            return ef->counts[ev->noteon.chan][ev->noteon.pitch] == 0 ? 1 : 0;
+            if (ef->flags & midi_hw_if_flag_NOTEOFFS) {
+                return ef->counts[ev->noteon.chan][ev->noteon.pitch] == 0 ? 1
+                                                                          : 0;
+            }
         default: return 1;
     }
 }
@@ -210,11 +221,12 @@ midi_hw_if_sched_ev(midi_hw_if_t *mhi,
     midi_hw_if_ev_t *ev = midi_hw_if_ev_new();
     fun(ev, aux);
     err_t err = midi_ev_seq_add_event(mhi->midi_ev_seq, ev);
+    if (err) {
+        midi_hw_if_ev_free(ev);
+        return err;
+    }
     if (mhi->mutex_unlock(mhi->mutex)) {
         return err_EINVAL;
-    }
-    if (err) {
-        return err;
     }
     return err_NONE;
 }
@@ -228,7 +240,7 @@ midi_hw_if_get_cur_time(midi_hw_if_t *mh)
 midi_hw_if_t *
 midi_hw_if_new(midi_hw_if_new_t *mhn)
 {
-    midi_hw_if_t *ret = _C(midi_hw_if_t,1);
+    midi_hw_if_t * ret = _C(midi_hw_if_t, 1);
     midi_ev_seq_t *msq = midi_ev_seq_new(mhn->maxevents);
     if (!msq) {
         _F(ret);
@@ -249,4 +261,28 @@ midi_hw_if_free(midi_hw_if_t *mhi)
 {
     midi_ev_seq_free(mhi->midi_ev_seq);
     _F(mhi);
+}
+
+err_t
+midi_hw_if_note_ev_set_start(midi_hw_if_note_ev_t *nev, midi_hw_if_ev_t *noev)
+{
+    if (noev->type != midi_hw_if_ev_type_NOTEON) {
+        return err_EINVAL;
+    }
+    nev->noteon.pitch = noev->noteon.pitch;
+    nev->noteon.vel = noev->noteon.vel;
+    mev->ts = noev->ts;
+    return err_NONE;
+}
+
+err_t
+midi_hw_if_note_ev_set_end(midi_hw_if_note_ev_t *nev, midi_hw_if_ev_t *noev)
+{
+    if (noev->type != midi_hw_if_ev_type_NOTEOFF) {
+        return err_EINVAL;
+    }
+    nev->noteoff.pitch = noev->noteoff.pitch;
+    nev->noteoff.vel = noev->noteoff.vel;
+    mev->len = noev->ts - nev->ts;
+    return err_NONE;
 }
